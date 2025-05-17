@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-  <meta charset="UTF-8">
-  <title>IP Viewer dengan Lokasi & Historis</title>
+  <meta charset="UTF-8" />
+  <title>IP Viewer dengan Lokasi & Historis + Export CSV</title>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -14,6 +14,7 @@
     }
     button {
       margin-top: 10px;
+      margin-right: 10px;
       padding: 6px 12px;
       background-color: #e74c3c;
       color: white;
@@ -23,6 +24,12 @@
     }
     button:hover {
       background-color: #c0392b;
+    }
+    #exportBtn {
+      background-color: #3498db;
+    }
+    #exportBtn:hover {
+      background-color: #2980b9;
     }
   </style>
 </head>
@@ -34,6 +41,7 @@
   <p>Total IP unik: <span id="total">0</span></p>
   <ul id="history"></ul>
 
+  <button id="exportBtn" onclick="exportCSV()">⬇️ Export ke CSV</button>
   <button onclick="hapusHistoris()">🗑️ Hapus Historis</button>
 
   <script>
@@ -90,6 +98,34 @@
         document.getElementById('total').textContent = '0';
         alert('Historis telah dihapus.');
       }
+    }
+
+    function exportCSV() {
+      let history = JSON.parse(localStorage.getItem('ipHistory')) || [];
+      if(history.length === 0){
+        alert('Tidak ada data historis untuk diekspor.');
+        return;
+      }
+      // Buat CSV header
+      const header = ['IP', 'Waktu', 'Lokasi'];
+      const rows = history.map(h => [h.ip, h.time, h.location || '']);
+
+      // Gabungkan header dan data
+      const csvContent = [header, ...rows]
+        .map(e => e.map(v => `"${v.replace(/"/g, '""')}"`).join(','))
+        .join('\n');
+
+      // Buat blob dan link download
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `historis-ip-${new Date().toISOString().slice(0,10)}.csv`;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
     }
 
     getIP();
