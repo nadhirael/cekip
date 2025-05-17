@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <title>IP Viewer dengan Lokasi & Historis</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+    }
+    li.current {
+      color: green;
+      font-weight: bold;
+    }
+    button {
+      margin-top: 10px;
+      padding: 6px 12px;
+      background-color: #e74c3c;
+      color: white;
+      border: none;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+    button:hover {
+      background-color: #c0392b;
+    }
+  </style>
+</head>
+<body>
+  <h1>Alamat IP Anda:</h1>
+  <p id="ip">Memuat...</p>
+
+  <h2>Historis IP (Tersimpan di Browser):</h2>
+  <p>Total IP unik: <span id="total">0</span></p>
+  <ul id="history"></ul>
+
+  <button onclick="hapusHistoris()">🗑️ Hapus Historis</button>
+
+  <script>
+    async function getIP() {
+      try {
+        const ipResponse = await fetch('https://api.ipify.org?format=json');
+        const ipData = await ipResponse.json();
+        const currentIP = ipData.ip;
+        document.getElementById('ip').textContent = currentIP;
+
+        let history = JSON.parse(localStorage.getItem('ipHistory')) || [];
+        const exists = history.some(entry => entry.ip === currentIP);
+
+        if (!exists) {
+          const locationResponse = await fetch(`https://ipapi.co/${currentIP}/json/`);
+          const loc = await locationResponse.json();
+          const location = `${loc.city || '-'}, ${loc.country_name || '-'}`;
+          const timestamp = new Date().toLocaleString();
+
+          history.push({ ip: currentIP, time: timestamp, location });
+          localStorage.setItem('ipHistory', JSON.stringify(history));
+        }
+
+        renderHistory(history, currentIP);
+      } catch (err) {
+        document.getElementById('ip').textContent = 'Gagal mengambil IP.';
+        console.error(err);
+      }
+    }
+
+    function renderHistory(history, currentIP) {
+      const list = document.getElementById('history');
+      const total = document.getElementById('total');
+      list.innerHTML = '';
+      total.textContent = history.length;
+
+      history.forEach(entry => {
+        const li = document.createElement('li');
+        li.textContent = `${entry.ip} - ${entry.time} - ${entry.location || 'Lokasi tidak tersedia'}`;
+
+        if (entry.ip === currentIP) {
+          li.classList.add('current');
+          li.textContent += ' ✅ (IP Saat Ini)';
+        }
+
+        list.appendChild(li);
+      });
+    }
+
+    function hapusHistoris() {
+      if (confirm('Yakin ingin menghapus seluruh historis IP?')) {
+        localStorage.removeItem('ipHistory');
+        document.getElementById('history').innerHTML = '';
+        document.getElementById('total').textContent = '0';
+        alert('Historis telah dihapus.');
+      }
+    }
+
+    getIP();
+  </script>
+</body>
+</html>
