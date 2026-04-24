@@ -3,100 +3,110 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IP Tracker</title>
+    <title>IPv4 Monitor</title>
     <style>
-        body { font-family: sans-serif; background: #0f172a; color: white; padding: 20px; }
-        .card { background: #1e293b; padding: 20px; border-radius: 10px; border: 1px solid #334155; margin-bottom: 20px; }
-        .ip-big { font-size: 24px; color: #fbbf24; font-weight: bold; font-family: monospace; }
-        .status-used { color: #ff4444; font-weight: bold; background: #450a0a; padding: 5px; border-radius: 5px; }
-        .status-fresh { color: #00ff00; font-weight: bold; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { border: 1px solid #334155; padding: 10px; text-align: left; }
-        th { background: #0f172a; }
+        body { font-family: sans-serif; background: #0b0f1a; color: #d1d5db; padding: 20px; }
+        .container { max-width: 800px; margin: auto; }
+        .card { background: #161b2a; padding: 20px; border-radius: 12px; border: 1px solid #2d3748; margin-bottom: 20px; }
+        .ip-text { font-size: 28px; color: #fbbf24; font-weight: bold; font-family: monospace; display: block; margin: 10px 0; }
+        .status-used { background: #7f1d1d; color: #fecaca; padding: 8px; border-radius: 6px; font-weight: bold; display: block; text-align: center; margin-bottom: 15px; border: 1px solid #dc2626; }
+        .status-fresh { background: #064e3b; color: #a7f3d0; padding: 8px; border-radius: 6px; font-weight: bold; display: block; text-align: center; margin-bottom: 15px; border: 1px solid #059669; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 12px; border-bottom: 1px solid #2d3748; text-align: left; }
+        th { background: #1e293b; color: #60a5fa; }
+        button { background: #374151; color: white; border: none; padding: 8px 12px; border-radius: 6px; cursor: pointer; }
     </style>
 </head>
 <body>
 
+<div class="container">
     <div class="card">
-        <h2>Info IP Saat Ini</h2>
-        <div id="status-area">Sedang mengecek...</div>
-        <div id="ip-display" class="ip-big"></div>
-        <div id="detail-area"></div>
+        <h2>Pengecekan IPv4</h2>
+        <div id="status-container">Sedang memproses...</div>
+        <span id="ip-display" class="ip-text">Mencari IP...</span>
+        <div id="isp-display" style="font-size: 0.9em; opacity: 0.8;"></div>
     </div>
 
     <div class="card">
-        <button onclick="localStorage.clear(); location.reload();" style="float:right">Reset Histori</button>
-        <h2>Histori IP</h2>
-        <table id="history-table">
+        <button onclick="clearLogs()" style="float: right;">Reset Histori</button>
+        <h3>Histori IP Pernah Terpakai</h3>
+        <table>
             <thead>
                 <tr>
                     <th>Waktu</th>
-                    <th>IP Address</th>
-                    <th>ISP</th>
+                    <th>Alamat IP</th>
                 </tr>
             </thead>
-            <tbody></tbody>
+            <tbody id="log-table"></tbody>
         </table>
     </div>
+</div>
 
 <script>
-    async function checkIP() {
+    async function getIP() {
         try {
-            // Menggunakan API yang lebih stabil dan mendukung HTTPS
-            const response = await fetch('https://ipwho.is/');
-            const data = await response.json();
+            // Gunakan Cloudflare Trace (Sangat stabil dan jarang diblokir)
+            const response = await fetch('https://1.1.1.1/cdn-cgi/trace');
+            const text = await response.text();
             
-            if(!data.success) throw new Error("API Error");
+            // Ekstrak baris IP dari data text Cloudflare
+            const lines = text.split('\n');
+            const data = {};
+            lines.forEach(line => {
+                const parts = line.split('=');
+                if (parts[1]) data[parts[0]] = parts[1];
+            });
 
             const currentIP = data.ip;
-            const currentISP = data.connection.isp;
+            const logTable = document.getElementById('log-table');
+            const statusContainer = document.getElementById('status-container');
+            const ipDisplay = document.getElementById('ip-display');
 
-            // Logika LocalStorage dengan proteksi Error (untuk Incognito)
-            let history = [];
-            try {
-                history = JSON.parse(localStorage.getItem('ip_logs')) || [];
-            } catch(e) {
-                document.getElementById('status-area').innerHTML = "<b style='color:orange'>Peringatan: Kamu di mode Incognito. Histori tidak bisa disimpan permanen.</b>";
+            // Ambil histori
+            let history = JSON.parse(localStorage.getItem('user_ip_history')) || [];
+            
+            // Cek apakah IP sudah ada
+            const isUsed = history.includes(currentIP);
+
+            // Update Tampilan Utama
+            ipDisplay.innerText = currentIP;
+            if (isUsed) {
+                statusContainer.innerHTML = '<div class="status-used">⚠️ IP INI SUDAH PERNAH TERPAKAI SEBELUMNYA!</div>';
+            } else {
+                statusContainer.innerHTML = '<div class="status-fresh">✅ IP FRESH / BELUM TERCATAT</div>';
+                // Simpan ke histori jika IP baru
+                history.unshift(currentIP);
+                localStorage.setItem('user_ip_history', JSON.stringify(history));
             }
 
-            const isUsed = history.some(item => item.ip === currentIP);
+            // Update Tabel Histori (Biar tahu IP apa saja yang sudah tersimpan)
+            renderTable(history);
 
-            // Update UI
-            document.getElementById('ip-display').innerText = currentIP;
-            document.getElementById('status-area').innerHTML = isUsed 
-                ? '<span class="status-used">⚠️ IP SUDAH PERNAH TERPAKAI!</span>' 
-                : '<span class="status-fresh">✅ IP FRESH (BARU)</span>';
-            document.getElementById('detail-area').innerText = "ISP: " + currentISP;
-
-            // Simpan jika IP baru
-            if (!isUsed) {
-                history.unshift({
-                    time: new Date().toLocaleString('id-ID'),
-                    ip: currentIP,
-                    isp: currentISP
-                });
-                try {
-                    localStorage.setItem('ip_logs', JSON.stringify(history));
-                } catch(e) {}
-            }
-
-            // Render Tabel
-            const tableBody = document.querySelector('#history-table tbody');
-            tableBody.innerHTML = history.map(item => `
-                <tr>
-                    <td>${item.time}</td>
-                    <td>${item.ip}</td>
-                    <td>${item.isp}</td>
-                </tr>
-            `).join('');
-
-        } catch (err) {
-            document.getElementById('status-area').innerText = "Gagal memuat. Pastikan koneksi internet aktif.";
-            console.error(err);
+        } catch (error) {
+            document.getElementById('status-container').innerHTML = "Gagal mengambil data. Coba matikan VPN/Adblock atau buka di browser Chrome biasa.";
+            console.error(error);
         }
     }
 
-    checkIP();
+    function renderTable(history) {
+        const tableBody = document.getElementById('log-table');
+        tableBody.innerHTML = history.map(ip => `
+            <tr>
+                <td>${new Date().toLocaleDateString('id-ID')}</td>
+                <td style="font-family: monospace; font-weight: bold;">${ip}</td>
+            </tr>
+        `).join('');
+    }
+
+    function clearLogs() {
+        if(confirm("Hapus semua catatan histori IP?")) {
+            localStorage.removeItem('user_ip_history');
+            location.reload();
+        }
+    }
+
+    getIP();
 </script>
+
 </body>
 </html>
