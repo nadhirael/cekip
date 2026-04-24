@@ -3,8 +3,6 @@
 <head>
   <meta charset="UTF-8" />
   <title>IP Checker Pro</title>
-
-  <!-- 🔥 biar gak cache -->
   <meta http-equiv="Cache-Control" content="no-cache">
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
@@ -19,7 +17,7 @@
 <body>
 
 <h1>Alamat IP Anda:</h1>
-<p id="ip">Memuat...</p>
+<div id="ip">Memuat...</div>
 
 <h2>Informasi ISP:</h2>
 <p id="isp">Memuat...</p>
@@ -60,41 +58,53 @@ function renderMapMarkers(history){
 
 async function getIP(){
   try{
+    // 🔥 ambil IPv4
+    let ipv4Res = await fetch('https://api.ipify.org?format=json');
+    let ipv4Json = await ipv4Res.json();
+    let ipv4 = ipv4Json.ip;
+
+    // 🔥 ambil IPv6 (opsional)
+    let ipv6 = '-';
+    try{
+      let ipv6Res = await fetch('https://api64.ipify.org?format=json');
+      let ipv6Json = await ipv6Res.json();
+      ipv6 = ipv6Json.ip;
+    }catch{}
+
     let data;
 
-    // 🔥 API 1 (paling stabil di GitHub)
+    // 🔥 detail IP pakai IPv4
     try{
-      let r = await fetch('https://ipapi.co/json/');
+      let r = await fetch(`https://ipapi.co/${ipv4}/json/`);
       let d = await r.json();
 
       data = {
-        ip:d.ip,
-        city:d.city,
-        country:d.country_name,
-        latitude:d.latitude,
-        longitude:d.longitude,
+        ip: ipv4,
+        city: d.city,
+        country: d.country_name,
+        latitude: d.latitude,
+        longitude: d.longitude,
         connection:{
-          isp:d.org,
-          org:d.org,
-          asn:d.asn,
+          isp: d.org,
+          org: d.org,
+          asn: d.asn,
           domain:'-'
         }
       };
-
     }catch{
-      // 🔥 fallback API
-      let r = await fetch('https://ipwho.is/');
+      let r = await fetch(`https://ipwho.is/${ipv4}`);
       let d = await r.json();
-
-      if(!d.success) throw new Error();
-
       data = d;
     }
 
-    if(!data.ip) throw new Error();
+    // 🔥 tampil IP
+    document.getElementById('ip').innerHTML = `
+      <b>IPv4:</b> ${ipv4}<br>
+      <b>IPv6:</b> ${ipv6}<br>
+      <b>Local IP:</b> <span id="localip">Detecting...</span>
+    `;
 
-    let ip = data.ip;
-
+    // 🔥 ISP
     let ispData = data.connection || {};
     let isp = `
 ISP: ${ispData.isp||'-'}
@@ -103,53 +113,70 @@ ASN: ${ispData.asn||'-'}
 DOMAIN: ${ispData.domain||'-'}
 `.trim();
 
-    document.getElementById('ip').textContent = ip;
     document.getElementById('isp').innerHTML = isp.replace(/\n/g,'<br>');
 
-    // status sederhana
+    // 🔥 status
     let status = "🟢 Normal";
-
     document.getElementById('security').innerHTML = `<b>${status}</b>`;
 
+    // 🔥 history
     let history = JSON.parse(localStorage.getItem('ipHistory')) || [];
 
-    if(!history.some(e=>e.ip===ip)){
+    if(!history.some(e=>e.ip===ipv4)){
       history.push({
-        ip,
-        time:new Date().toLocaleString(),
-        location:`${data.city||'-'}, ${data.country||'-'}`,
-        lat:data.latitude,
-        lon:data.longitude,
+        ip: ipv4,
+        time: new Date().toLocaleString(),
+        location: `${data.city||'-'}, ${data.country||'-'}`,
+        lat: data.latitude,
+        lon: data.longitude,
         isp,
         status
       });
-
       localStorage.setItem('ipHistory', JSON.stringify(history));
     }
 
-    renderHistory(history, ip);
+    renderHistory(history, ipv4);
     renderMapMarkers(history);
 
     if(data.latitude){
       map.setView([data.latitude,data.longitude],8);
     }
 
+    getLocalIP();
+
   }catch(e){
     document.getElementById('ip').textContent = '❌ Gagal load';
-    document.getElementById('isp').textContent = '-';
-    document.getElementById('security').textContent = '-';
     console.error(e);
   }
 }
 
+function getLocalIP(){
+  try{
+    let pc = new RTCPeerConnection({iceServers:[]});
+    pc.createDataChannel("");
+    pc.createOffer().then(o=>pc.setLocalDescription(o));
+
+    pc.onicecandidate = e=>{
+      if(!e || !e.candidate) return;
+      let ip = e.candidate.candidate.split(' ')[4];
+      if(ip){
+        document.getElementById('localip').textContent = ip;
+        pc.onicecandidate = null;
+      }
+    };
+  }catch{
+    document.getElementById('localip').textContent = '-';
+  }
+}
+
 function renderHistory(h,cur){
-  let list=document.getElementById('history');
-  list.innerHTML='';
-  document.getElementById('total').textContent=h.length;
+  let list = document.getElementById('history');
+  list.innerHTML = '';
+  document.getElementById('total').textContent = h.length;
 
   h.forEach(e=>{
-    let li=document.createElement('li');
-    li.innerHTML=`
+    let li = document.createElement('li');
+    li.innerHTML = `
 ${e.ip} - ${e.time}<br>
 ${e.location}<br>
 ${e.isp.replace(/\n/g,'<br>')}<br>
@@ -166,22 +193,22 @@ function hapusHistoris(){
 }
 
 function exportCSV(){
-  let h=JSON.parse(localStorage.getItem('ipHistory'))||[];
+  let h = JSON.parse(localStorage.getItem('ipHistory')) || [];
   if(!h.length) return alert('Kosong');
 
-  let csv=[['IP','Waktu','Lokasi','ISP','Status'],
+  let csv = [['IP','Waktu','Lokasi','ISP','Status'],
     ...h.map(e=>[e.ip,e.time,e.location,e.isp,e.status])]
     .map(r=>r.map(v=>`"${v}"`).join(',')).join('\n');
 
-  let blob=new Blob([csv]);
-  let a=document.createElement('a');
-  a.href=URL.createObjectURL(blob);
-  a.download='ip-history.csv';
+  let blob = new Blob([csv]);
+  let a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'ip-history.csv';
   a.click();
 }
 
 document.getElementById('filterInput').addEventListener('input',e=>{
-  let k=e.target.value.toLowerCase();
+  let k = e.target.value.toLowerCase();
   document.querySelectorAll('#history li').forEach(li=>{
     li.style.display = li.textContent.toLowerCase().includes(k) ? '' : 'none';
   });
