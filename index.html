@@ -2,249 +2,193 @@
 <html lang="id">
 <head>
   <meta charset="UTF-8" />
-  <title>IP Viewer dengan Lokasi, ISP & Historis + Export CSV</title>
+  <title>IP Checker Pro</title>
+
+  <!-- 🔥 biar gak cache -->
+  <meta http-equiv="Cache-Control" content="no-cache">
+
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      padding: 20px;
-    }
-    li.current {
-      color: green;
-      font-weight: bold;
-    }
-    button {
-      margin-top: 10px;
-      margin-right: 10px;
-      padding: 6px 12px;
-      background-color: #e74c3c;
-      color: white;
-      border: none;
-      cursor: pointer;
-      border-radius: 4px;
-    }
-    button:hover {
-      background-color: #c0392b;
-    }
-    #exportBtn {
-      background-color: #3498db;
-    }
-    #exportBtn:hover {
-      background-color: #2980b9;
-    }
-    #map {
-      height: 400px;
-      margin-top: 10px;
-      border: 1px solid #ccc;
-      border-radius: 8px;
-    }
+    body { font-family: Arial; padding: 20px; }
+    li.current { color: green; font-weight: bold; }
+    button { margin: 10px 5px; padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; }
+    #exportBtn { background:#3498db; color:white; }
+    #map { height:400px; margin-top:10px; border-radius:8px; }
   </style>
 </head>
 <body>
 
-  <h1>Alamat IP Anda:</h1>
-  <p id="ip">Memuat...</p>
+<h1>Alamat IP Anda:</h1>
+<p id="ip">Memuat...</p>
 
-  <h2>Informasi ISP:</h2>
-  <p id="isp">Memuat...</p>
+<h2>Informasi ISP:</h2>
+<p id="isp">Memuat...</p>
 
-  <h2>Status Koneksi:</h2>
-  <p id="security">Memuat...</p>
+<h2>Status:</h2>
+<p id="security">Memuat...</p>
 
-  <h2>Historis IP (Tersimpan di Browser):</h2>
-  <label>🔍 Filter:
-    <input type="text" id="filterInput" placeholder="Cari IP / kota / negara / ISP..." />
-  </label>
-  <p>Total IP unik: <span id="total">0</span></p>
-  <ul id="history"></ul>
+<h2>Historis IP:</h2>
+<input id="filterInput" placeholder="Cari IP / lokasi / ISP..." />
+<p>Total: <span id="total">0</span></p>
+<ul id="history"></ul>
 
-  <button id="exportBtn" onclick="exportCSV()">⬇️ Export ke CSV</button>
-  <button onclick="hapusHistoris()">🗑️ Hapus Historis</button>
+<button id="exportBtn" onclick="exportCSV()">Export CSV</button>
+<button onclick="hapusHistoris()">Hapus</button>
 
-  <h2>Peta Lokasi IP:</h2>
-  <div id="map"></div>
+<h2>Peta:</h2>
+<div id="map"></div>
 
-  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-  <script>
-    let map = L.map('map').setView([0, 0], 2);
-    let markers = [];
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script>
+let map = L.map('map').setView([0,0],2);
+let markers = [];
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap contributors'
-    }).addTo(map);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-    function renderMapMarkers(history) {
-      markers.forEach(m => map.removeLayer(m));
-      markers = [];
+function renderMapMarkers(history){
+  markers.forEach(m => map.removeLayer(m));
+  markers = [];
 
-      history.forEach(entry => {
-        if (entry.lat && entry.lon) {
-          const marker = L.marker([entry.lat, entry.lon])
-            .addTo(map)
-            .bindPopup(`
-              <b>${entry.ip}</b><br>
-              ${entry.location}<br>
-              ${entry.isp.replace(/\n/g,'<br>')}<br>
-              <b>${entry.status}</b>
-            `);
-          markers.push(marker);
+  history.forEach(e=>{
+    if(e.lat && e.lon){
+      let m = L.marker([e.lat,e.lon]).addTo(map)
+      .bindPopup(`<b>${e.ip}</b><br>${e.location}<br>${e.isp.replace(/\n/g,'<br>')}<br><b>${e.status}</b>`);
+      markers.push(m);
+    }
+  });
+}
+
+async function getIP(){
+  try{
+    let data;
+
+    // 🔥 API 1 (paling stabil di GitHub)
+    try{
+      let r = await fetch('https://ipapi.co/json/');
+      let d = await r.json();
+
+      data = {
+        ip:d.ip,
+        city:d.city,
+        country:d.country_name,
+        latitude:d.latitude,
+        longitude:d.longitude,
+        connection:{
+          isp:d.org,
+          org:d.org,
+          asn:d.asn,
+          domain:'-'
         }
-      });
+      };
+
+    }catch{
+      // 🔥 fallback API
+      let r = await fetch('https://ipwho.is/');
+      let d = await r.json();
+
+      if(!d.success) throw new Error();
+
+      data = d;
     }
 
-    async function getIP() {
-      try {
-        // 🔥 pakai 1 API (lengkap)
-        const res = await fetch('https://ipwho.is/?security=1');
-        const data = await res.json();
+    if(!data.ip) throw new Error();
 
-        if (!data.success) throw new Error('Gagal ambil data');
+    let ip = data.ip;
 
-        const currentIP = data.ip;
-
-        // ISP detail
-        const ispData = data.connection || {};
-        const isp = `
-ISP: ${ispData.isp || '-'}
-ORG: ${ispData.org || '-'}
-ASN: ${ispData.asn || '-'}
-DOMAIN: ${ispData.domain || '-'}
+    let ispData = data.connection || {};
+    let isp = `
+ISP: ${ispData.isp||'-'}
+ORG: ${ispData.org||'-'}
+ASN: ${ispData.asn||'-'}
+DOMAIN: ${ispData.domain||'-'}
 `.trim();
 
-        document.getElementById('ip').textContent = currentIP;
-        document.getElementById('isp').innerHTML = isp.replace(/\n/g,'<br>');
+    document.getElementById('ip').textContent = ip;
+    document.getElementById('isp').innerHTML = isp.replace(/\n/g,'<br>');
 
-        // 🔍 status koneksi
-        const isProxy = data.security?.proxy;
-        const isVPN = data.security?.vpn;
-        const isTor = data.security?.tor;
+    // status sederhana
+    let status = "🟢 Normal";
 
-        let status = "🟢 Aman (Residential)";
-        if (isVPN) status = "🟡 VPN Terdeteksi";
-        if (isProxy) status = "🟠 Proxy Terdeteksi";
-        if (isTor) status = "🔴 TOR Network";
+    document.getElementById('security').innerHTML = `<b>${status}</b>`;
 
-        let connectionType = "ISP Biasa";
-        if (ispData.org?.toLowerCase().includes('amazon') || ispData.org?.toLowerCase().includes('google')) {
-          connectionType = "Hosting / Data Center";
-        }
-        if (ispData.isp?.toLowerCase().includes('telkomsel') || ispData.isp?.toLowerCase().includes('xl')) {
-          connectionType = "Mobile Network";
-        }
+    let history = JSON.parse(localStorage.getItem('ipHistory')) || [];
 
-        document.getElementById('security').innerHTML = `
-          <b>Status:</b> ${status}<br>
-          <b>Tipe:</b> ${connectionType}
-        `;
-
-        let history = JSON.parse(localStorage.getItem('ipHistory')) || [];
-        const exists = history.some(entry => entry.ip === currentIP);
-
-        if (!exists) {
-          const location = `${data.city || '-'}, ${data.country || '-'}`;
-          const lat = data.latitude || null;
-          const lon = data.longitude || null;
-          const timestamp = new Date().toLocaleString();
-
-          history.push({
-            ip: currentIP,
-            time: timestamp,
-            location,
-            lat,
-            lon,
-            isp,
-            status
-          });
-
-          localStorage.setItem('ipHistory', JSON.stringify(history));
-        }
-
-        renderHistory(history, currentIP);
-        renderMapMarkers(history);
-
-        if (data.latitude && data.longitude) {
-          map.setView([data.latitude, data.longitude], 8);
-        }
-
-      } catch (err) {
-        document.getElementById('ip').textContent = 'Gagal mengambil IP.';
-        console.error(err);
-      }
-    }
-
-    function renderHistory(history, currentIP) {
-      const list = document.getElementById('history');
-      const total = document.getElementById('total');
-      list.innerHTML = '';
-      total.textContent = history.length;
-
-      history.forEach(entry => {
-        const li = document.createElement('li');
-
-        li.innerHTML = `
-          ${entry.ip} - ${entry.time}<br>
-          ${entry.location}<br>
-          ${entry.isp.replace(/\n,'<br>')}<br>
-          <b>${entry.status}</b>
-        `;
-
-        if (entry.ip === currentIP) {
-          li.classList.add('current');
-        }
-
-        list.appendChild(li);
+    if(!history.some(e=>e.ip===ip)){
+      history.push({
+        ip,
+        time:new Date().toLocaleString(),
+        location:`${data.city||'-'}, ${data.country||'-'}`,
+        lat:data.latitude,
+        lon:data.longitude,
+        isp,
+        status
       });
+
+      localStorage.setItem('ipHistory', JSON.stringify(history));
     }
 
-    function hapusHistoris() {
-      if (confirm('Yakin ingin menghapus seluruh historis IP?')) {
-        localStorage.removeItem('ipHistory');
-        location.reload();
-      }
+    renderHistory(history, ip);
+    renderMapMarkers(history);
+
+    if(data.latitude){
+      map.setView([data.latitude,data.longitude],8);
     }
 
-    function exportCSV() {
-      let history = JSON.parse(localStorage.getItem('ipHistory')) || [];
-      if(history.length === 0){
-        alert('Tidak ada data historis untuk diekspor.');
-        return;
-      }
+  }catch(e){
+    document.getElementById('ip').textContent = '❌ Gagal load';
+    document.getElementById('isp').textContent = '-';
+    document.getElementById('security').textContent = '-';
+    console.error(e);
+  }
+}
 
-      const header = ['IP', 'Waktu', 'Lokasi', 'ISP', 'Status'];
+function renderHistory(h,cur){
+  let list=document.getElementById('history');
+  list.innerHTML='';
+  document.getElementById('total').textContent=h.length;
 
-      const rows = history.map(h => [
-        h.ip,
-        h.time,
-        h.location || '',
-        h.isp || '',
-        h.status || ''
-      ]);
+  h.forEach(e=>{
+    let li=document.createElement('li');
+    li.innerHTML=`
+${e.ip} - ${e.time}<br>
+${e.location}<br>
+${e.isp.replace(/\n/g,'<br>')}<br>
+<b>${e.status}</b>
+`;
+    if(e.ip===cur) li.classList.add('current');
+    list.appendChild(li);
+  });
+}
 
-      const csvContent = [header, ...rows]
-        .map(e => e.map(v => `"${v.replace(/"/g, '""')}"`).join(','))
-        .join('\n');
+function hapusHistoris(){
+  localStorage.removeItem('ipHistory');
+  location.reload();
+}
 
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
+function exportCSV(){
+  let h=JSON.parse(localStorage.getItem('ipHistory'))||[];
+  if(!h.length) return alert('Kosong');
 
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'ip_history.csv';
-      a.click();
+  let csv=[['IP','Waktu','Lokasi','ISP','Status'],
+    ...h.map(e=>[e.ip,e.time,e.location,e.isp,e.status])]
+    .map(r=>r.map(v=>`"${v}"`).join(',')).join('\n');
 
-      URL.revokeObjectURL(url);
-    }
+  let blob=new Blob([csv]);
+  let a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='ip-history.csv';
+  a.click();
+}
 
-    document.getElementById('filterInput').addEventListener('input', function() {
-      const keyword = this.value.toLowerCase();
-      const listItems = document.querySelectorAll('#history li');
+document.getElementById('filterInput').addEventListener('input',e=>{
+  let k=e.target.value.toLowerCase();
+  document.querySelectorAll('#history li').forEach(li=>{
+    li.style.display = li.textContent.toLowerCase().includes(k) ? '' : 'none';
+  });
+});
 
-      listItems.forEach(li => {
-        li.style.display = li.textContent.toLowerCase().includes(keyword) ? '' : 'none';
-      });
-    });
+getIP();
+</script>
 
-    getIP();
-  </script>
 </body>
 </html>
