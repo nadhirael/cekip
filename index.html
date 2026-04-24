@@ -3,55 +3,50 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IP Usage Monitor</title>
+    <title>IPv4 Usage Monitor</title>
     <style>
         body { font-family: 'Segoe UI', sans-serif; background: #0b0f1a; color: #d1d5db; padding: 20px; }
         .container { max-width: 900px; margin: auto; }
         .card { background: #161b2a; padding: 25px; border-radius: 15px; box-shadow: 0 10px 20px rgba(0,0,0,0.5); margin-bottom: 20px; border: 1px solid #2d3748; }
         
-        /* Status Warna */
-        .status-new { background: #059669; color: white; padding: 4px 12px; border-radius: 50px; font-size: 0.8em; font-weight: bold; }
-        .status-used { background: #dc2626; color: white; padding: 4px 12px; border-radius: 50px; font-size: 0.8em; font-weight: bold; animation: pulse 2s infinite; }
+        .status-new { background: #059669; color: white; padding: 5px 15px; border-radius: 50px; font-size: 0.85em; font-weight: bold; }
+        .status-used { background: #dc2626; color: white; padding: 5px 15px; border-radius: 50px; font-size: 0.85em; font-weight: bold; animation: pulse 2s infinite; }
         
-        @keyframes pulse {
-            0% { opacity: 1; }
-            50% { opacity: 0.5; }
-            100% { opacity: 1; }
-        }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
 
         h2 { color: #60a5fa; margin-top: 0; border-bottom: 2px solid #1e293b; padding-bottom: 10px; }
         table { width: 100%; border-collapse: collapse; margin-top: 15px; }
         th, td { padding: 12px; text-align: left; border-bottom: 1px solid #2d3748; }
         th { background: #1e293b; color: #60a5fa; }
-        .ip-text { font-family: monospace; font-weight: bold; font-size: 1.1em; color: #fbbf24; }
-        .warning-box { background: #450a0a; border: 1px solid #dc2626; padding: 15px; border-radius: 8px; margin-bottom: 15px; display: none; color: #fecaca; }
+        .ip-text { font-family: 'Courier New', Courier, monospace; font-weight: bold; font-size: 1.2em; color: #fbbf24; }
         
-        button { background: #374151; color: white; border: none; padding: 10px 15px; border-radius: 6px; cursor: pointer; transition: 0.3s; }
-        button:hover { background: #4b5563; }
+        .warning-box { background: #450a0a; border: 1px solid #dc2626; padding: 15px; border-radius: 8px; margin-bottom: 15px; display: none; color: #fecaca; font-weight: bold; text-align: center; }
+        
+        button { background: #ef4444; color: white; border: none; padding: 8px 15px; border-radius: 6px; cursor: pointer; float: right; font-weight: bold; }
+        button:hover { background: #b91c1c; }
     </style>
 </head>
 <body>
 
 <div class="container">
     <div id="duplicate-warning" class="warning-box">
-        ⚠️ <strong>PERINGATAN:</strong> IP ini sudah pernah digunakan sebelumnya dalam histori Anda!
+        ⚠️ PERHATIAN: IP INI SUDAH PERNAH TERPAKAI SEBELUMNYA!
     </div>
 
     <div class="card">
-        <h2>Koneksi Saat Ini</h2>
-        <div id="current-info">Sedang mengecek IP...</div>
+        <h2>Status IPv4 Saat Ini</h2>
+        <div id="current-info">Sedang memanggil IPv4...</div>
     </div>
 
     <div class="card">
-        <button onclick="clearHistory()" style="float: right;">Reset Histori</button>
-        <h2>Daftar Histori Penggunaan IP</h2>
+        <button onclick="clearHistory()">Reset Histori</button>
+        <h2>Histori Penggunaan IPv4</h2>
         <table>
             <thead>
                 <tr>
                     <th>Waktu Akses</th>
-                    <th>Alamat IP</th>
-                    <th>ISP</th>
-                    <th>Lokasi</th>
+                    <th>IPv4 Address</th>
+                    <th>Provider (ISP)</th>
                 </tr>
             </thead>
             <tbody id="history-table"></tbody>
@@ -60,23 +55,28 @@
 </div>
 
 <script>
-    async function checkIP() {
+    async function checkIPv4() {
         try {
-            const response = await fetch('https://ipapi.co/json/');
-            const data = await response.json();
+            // Menggunakan ipify untuk memaksa hasil IPv4
+            const ipRes = await fetch('https://api.ipify.org?format=json');
+            const ipData = await ipRes.json();
+            const ipv4 = ipData.ip;
+
+            // Ambil detail ISP (Opsional, pakai ip-api.com yang lebih stabil untuk info lokasi)
+            const detailRes = await fetch(`http://ip-api.com/json/${ipv4}`);
+            const detailData = await detailRes.json();
+
+            let history = JSON.parse(localStorage.getItem('ipv4_logs')) || [];
             
-            const currentIP = data.ip;
-            let history = JSON.parse(localStorage.getItem('my_ip_logs')) || [];
+            // Cek apakah IPv4 ini sudah ada di histori
+            const isUsed = history.some(item => item.ip === ipv4);
             
-            // Cek apakah IP ini sudah ada di histori
-            const isUsed = history.some(item => item.ip === currentIP);
+            // Update UI
+            displayStatus(ipv4, detailData, isUsed);
             
-            // Tampilkan info sekarang
-            displayCurrentStatus(data, isUsed);
-            
-            // Simpan ke histori jika belum ada atau jika ingin mencatat setiap sesi
+            // Simpan jika IP baru
             if (!isUsed) {
-                saveEntry(data);
+                saveEntry(ipv4, detailData);
             } else {
                 document.getElementById('duplicate-warning').style.display = 'block';
             }
@@ -84,56 +84,55 @@
             renderTable();
 
         } catch (error) {
-            document.getElementById('current-info').innerText = "Gagal mengambil data IP.";
+            document.getElementById('current-info').innerText = "Gagal memuat data. Pastikan tidak di mode Incognito dan matikan AdBlock.";
+            console.error(error);
         }
     }
 
-    function displayCurrentStatus(data, isUsed) {
+    function displayStatus(ip, details, isUsed) {
         const statusHTML = isUsed 
-            ? `<span class="status-used">ALREADY USED / PERNAH TERPAKAI</span>` 
+            ? `<span class="status-used">SUDAH PERNAH TERPAKAI</span>` 
             : `<span class="status-new">FRESH / BELUM PERNAH</span>`;
 
         document.getElementById('current-info').innerHTML = `
             <p>Status: ${statusHTML}</p>
-            <p>IP Address: <span class="ip-text">${data.ip}</span></p>
-            <p>ISP: ${data.org}</p>
-            <p>Lokasi: ${data.city}, ${data.country_name}</p>
+            <p>Alamat IPv4: <span class="ip-text">${ip}</span></p>
+            <p>ISP: ${details.isp || 'Tidak terdeteksi'}</p>
+            <p>Negara: ${details.country || '-'}</p>
         `;
     }
 
-    function saveEntry(data) {
-        let history = JSON.parse(localStorage.getItem('my_ip_logs')) || [];
+    function saveEntry(ip, details) {
+        let history = JSON.parse(localStorage.getItem('ipv4_logs')) || [];
         const newEntry = {
             time: new Date().toLocaleString('id-ID'),
-            ip: data.ip,
-            isp: data.org,
-            location: `${data.city}, ${data.country_name}`
+            ip: ip,
+            isp: details.isp || 'Unknown',
         };
         history.unshift(newEntry);
-        localStorage.setItem('my_ip_logs', JSON.stringify(history));
+        localStorage.setItem('ipv4_logs', JSON.stringify(history));
     }
 
     function renderTable() {
-        const history = JSON.parse(localStorage.getItem('my_ip_logs')) || [];
+        const history = JSON.parse(localStorage.getItem('ipv4_logs')) || [];
         const tableBody = document.getElementById('history-table');
         tableBody.innerHTML = history.map(item => `
             <tr>
                 <td>${item.time}</td>
                 <td class="ip-text">${item.ip}</td>
                 <td>${item.isp}</td>
-                <td>${item.location}</td>
             </tr>
         `).join('');
     }
 
     function clearHistory() {
-        if (confirm("Hapus semua data histori IP?")) {
-            localStorage.removeItem('my_ip_logs');
+        if (confirm("Hapus semua histori IPv4?")) {
+            localStorage.removeItem('ipv4_logs');
             location.reload();
         }
     }
 
-    checkIP();
+    checkIPv4();
 </script>
 
 </body>
