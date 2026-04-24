@@ -1,345 +1,122 @@
 <!DOCTYPE html>
-
 <html lang="id">
-
 <head>
-
   <meta charset="UTF-8" />
-
-  <title>IP Viewer dengan Lokasi & Historis + Export CSV</title>
-
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IP Viewer Pro - Lokasi & Historis</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-
   <style>
-
     body {
-
-      font-family: Arial, sans-serif;
-
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
       padding: 20px;
-
+      background-color: #f4f7f6;
+      color: #333;
     }
-
-    li.current {
-
-      color: green;
-
+    .container {
+      max-width: 900px;
+      margin: auto;
+      background: white;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    }
+    h1 { color: #2c3e50; margin-top: 0; }
+    #ip {
+      font-size: 1.5em;
       font-weight: bold;
-
+      color: #2980b9;
+      background: #e1f5fe;
+      display: inline-block;
+      padding: 5px 15px;
+      border-radius: 6px;
+      margin-bottom: 10px;
     }
-
-    button {
-
-      margin-top: 10px;
-
-      margin-right: 10px;
-
-      padding: 6px 12px;
-
-      background-color: #e74c3c;
-
-      color: white;
-
-      border: none;
-
-      cursor: pointer;
-
-      border-radius: 4px;
-
-    }
-
-    button:hover {
-
-      background-color: #c0392b;
-
-    }
-
-    #exportBtn {
-
-      background-color: #3498db;
-
-    }
-
-    #exportBtn:hover {
-
-      background-color: #2980b9;
-
-    }
-
-    #map {
-
-      height: 400px;
-
-      margin-top: 10px;
-
+    .controls { margin-bottom: 20px; }
+    #filterInput {
+      padding: 8px;
+      width: 250px;
       border: 1px solid #ccc;
-
-      border-radius: 8px;
-
+      border-radius: 4px;
     }
-
+    button {
+      padding: 8px 16px;
+      border: none;
+      cursor: pointer;
+      border-radius: 4px;
+      font-weight: bold;
+      margin-right: 5px;
+      color: white;
+    }
+    #exportBtn { background-color: #3498db; }
+    .btn-delete { background-color: #e74c3c; }
+    
+    #map {
+      height: 400px;
+      margin-top: 20px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      z-index: 1;
+    }
+    ul {
+      padding: 0;
+      max-height: 250px;
+      overflow-y: auto;
+      border: 1px solid #eee;
+      border-radius: 4px;
+    }
+    li {
+      padding: 10px;
+      border-bottom: 1px solid #eee;
+      list-style: none;
+      font-size: 14px;
+    }
+    li.current {
+      background-color: #e8f5e9;
+      border-left: 5px solid #4caf50;
+      font-weight: bold;
+    }
+    .info-text { font-size: 0.9em; color: #666; margin-bottom: 10px; }
   </style>
-
 </head>
-
 <body>
 
+<div class="container">
   <h1>Alamat IP Anda:</h1>
+  <p id="ip">Mendeteksi...</p>
+  <p id="isp-info" class="info-text">Mencari info provider...</p>
 
-  <p id="ip">Memuat...</p>
-
-
-
-  <h2>Historis IP (Tersimpan di Browser):</h2>
-
-  <label>🔍 Filter:
-
-    <input type="text" id="filterInput" placeholder="Cari IP / kota / negara..." />
-
-  </label>
-
-  <p>Total IP unik: <span id="total">0</span></p>
-
+  <h2>Historis IP:</h2>
+  <div class="controls">
+    <input type="text" id="filterInput" placeholder="🔍 Cari IP atau lokasi..." />
+    <button id="exportBtn" onclick="exportCSV()">⬇️ Export CSV</button>
+    <button class="btn-delete" onclick="hapusHistoris()">🗑️ Hapus Semua</button>
+  </div>
+  
+  <p class="info-text">Total IP unik tersimpan: <span id="total">0</span></p>
   <ul id="history"></ul>
 
-
-
-  <button id="exportBtn" onclick="exportCSV()">⬇️ Export ke CSV</button>
-
-  <button onclick="hapusHistoris()">🗑️ Hapus Historis</button>
-
-
-
-  <h2>Peta Lokasi IP:</h2>
-
+  <h2>Peta Lokasi:</h2>
   <div id="map"></div>
+</div>
 
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script>
+  // Inisialisasi Peta
+  let map = L.map('map').setView([0, 0], 2);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap contributors'
+  }).addTo(map);
 
-
-  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-
-  <script>
-
-    let map = L.map('map').setView([0, 0], 2);
-
-
-
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-
-      attribution: '© OpenStreetMap contributors'
-
-    }).addTo(map);
-
-
-
-    function renderMapMarkers(history) {
-
-      history.forEach(entry => {
-
-        if (entry.lat && entry.lon) {
-
-          L.marker([entry.lat, entry.lon])
-
-            .addTo(map)
-
-            .bindPopup(<b>${entry.ip}</b><br>${entry.location});
-
-        }
-
-      });
-
-    }
-
-
-
-    async function getIP() {
-
-      try {
-
-        const ipResponse = await fetch('https://api.ipify.org?format=json');
-
-        const ipData = await ipResponse.json();
-
-        const currentIP = ipData.ip;
-
-        document.getElementById('ip').textContent = currentIP;
-
-
-
-        let history = JSON.parse(localStorage.getItem('ipHistory')) || [];
-
-        const exists = history.some(entry => entry.ip === currentIP);
-
-
-
-        if (!exists) {
-
-          const locationResponse = await fetch(https://ipapi.co/${currentIP}/json/);
-
-          const loc = await locationResponse.json();
-
-          const location = ${loc.city || '-'}, ${loc.country_name || '-'};
-
-          const lat = loc.latitude || null;
-
-          const lon = loc.longitude || null;
-
-          const timestamp = new Date().toLocaleString();
-
-
-
-          history.push({ ip: currentIP, time: timestamp, location, lat, lon });
-
-          localStorage.setItem('ipHistory', JSON.stringify(history));
-
-        }
-
-
-
-        renderHistory(history, currentIP);
-
-        renderMapMarkers(history);
-
-      } catch (err) {
-
-        document.getElementById('ip').textContent = 'Gagal mengambil IP.';
-
-        console.error(err);
-
+  function renderMapMarkers(history) {
+    history.forEach(entry => {
+      if (entry.lat && entry.lon) {
+        L.marker([entry.lat, entry.lon])
+          .addTo(map)
+          .bindPopup(`<b>${entry.ip}</b><br>${entry.isp}<br>${entry.location}`);
       }
-
-    }
-
-
-
-    function renderHistory(history, currentIP) {
-
-      const list = document.getElementById('history');
-
-      const total = document.getElementById('total');
-
-      list.innerHTML = '';
-
-      total.textContent = history.length;
-
-
-
-      history.forEach(entry => {
-
-        const li = document.createElement('li');
-
-        li.textContent = ${entry.ip} - ${entry.time} - ${entry.location || 'Lokasi tidak tersedia'};
-
-
-
-        if (entry.ip === currentIP) {
-
-          li.classList.add('current');
-
-          li.textContent += ' ✅ (IP Saat Ini)';
-
-        }
-
-
-
-        list.appendChild(li);
-
-      });
-
-    }
-
-
-
-    function hapusHistoris() {
-
-      if (confirm('Yakin ingin menghapus seluruh historis IP?')) {
-
-        localStorage.removeItem('ipHistory');
-
-        document.getElementById('history').innerHTML = '';
-
-        document.getElementById('total').textContent = '0';
-
-        alert('Historis telah dihapus.');
-
-        location.reload(); // reload agar marker juga dihapus
-
-      }
-
-    }
-
-
-
-    function exportCSV() {
-
-      let history = JSON.parse(localStorage.getItem('ipHistory')) || [];
-
-      if(history.length === 0){
-
-        alert('Tidak ada data historis untuk diekspor.');
-
-        return;
-
-      }
-
-      const header = ['IP', 'Waktu', 'Lokasi'];
-
-      const rows = history.map(h => [h.ip, h.time, h.location || '']);
-
-      const csvContent = [header, ...rows]
-
-        .map(e => e.map(v => "${v.replace(/"/g, '""')}").join(','))
-
-        .join('\n');
-
-
-
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-
-      const url = URL.createObjectURL(blob);
-
-      const a = document.createElement('a');
-
-      a.href = url;
-
-      a.download = historis-ip-${new Date().toISOString().slice(0,10)}.csv;
-
-      a.style.display = 'none';
-
-      document.body.appendChild(a);
-
-      a.click();
-
-      document.body.removeChild(a);
-
-      URL.revokeObjectURL(url);
-
-    }
-
-
-
-    // Filter IP
-
-    document.getElementById('filterInput').addEventListener('input', function() {
-
-      const keyword = this.value.toLowerCase();
-
-      const listItems = document.querySelectorAll('#history li');
-
-      listItems.forEach(li => {
-
-        li.style.display = li.textContent.toLowerCase().includes(keyword) ? '' : 'none';
-
-      });
-
     });
+  }
 
-
-
-    getIP();
-
-  </script>
-
-</body>
-
-</html>
+  async function getIP() {
+    try {
+      // Menggunakan ipwho.is (Gratis, HTTPS, No
