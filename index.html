@@ -3,19 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IPv4 Monitor + ISP</title>
+    <title>IP Monitor Pro - Location & ISP</title>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #0f172a; color: #e2e8f0; padding: 20px; }
-        .container { max-width: 800px; margin: auto; }
+        body { font-family: 'Segoe UI', sans-serif; background: #0f172a; color: #e2e8f0; padding: 20px; }
+        .container { max-width: 900px; margin: auto; }
         .card { background: #1e293b; padding: 25px; border-radius: 12px; border: 1px solid #334155; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
-        .ip-text { font-size: 32px; color: #fbbf24; font-weight: bold; font-family: monospace; display: block; margin: 10px 0; }
-        .isp-text { font-size: 1.1em; color: #38bdf8; font-weight: 500; }
+        .ip-text { font-size: 32px; color: #fbbf24; font-weight: bold; font-family: monospace; display: block; margin: 5px 0; }
+        .loc-text { font-size: 1.1em; color: #38bdf8; margin-bottom: 5px; }
         .status-used { background: #7f1d1d; color: #fecaca; padding: 10px; border-radius: 8px; font-weight: bold; display: block; text-align: center; margin-bottom: 15px; border: 1px solid #dc2626; }
         .status-fresh { background: #064e3b; color: #a7f3d0; padding: 10px; border-radius: 8px; font-weight: bold; display: block; text-align: center; margin-bottom: 15px; border: 1px solid #059669; }
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.9em; }
         th, td { padding: 12px; border-bottom: 1px solid #334155; text-align: left; }
-        th { background: #0f172a; color: #94a3b8; font-size: 0.8em; text-transform: uppercase; }
-        button { background: #334155; color: white; border: none; padding: 8px 15px; border-radius: 6px; cursor: pointer; transition: 0.2s; }
+        th { background: #0f172a; color: #94a3b8; }
+        .badge-geo { background: #334155; padding: 2px 6px; border-radius: 4px; font-size: 0.85em; }
+        button { background: #334155; color: white; border: none; padding: 8px 15px; border-radius: 6px; cursor: pointer; }
         button:hover { background: #475569; }
     </style>
 </head>
@@ -24,20 +25,22 @@
 <div class="container">
     <div class="card">
         <h2>Koneksi Saat Ini</h2>
-        <div id="status-container">Menghubungkan ke server...</div>
+        <div id="status-container">Menghubungkan...</div>
         <span id="ip-display" class="ip-text">Mencari IP...</span>
-        <div id="isp-display" class="isp-text">Mencari ISP...</div>
+        <div id="loc-display" class="loc-text">Mencari Lokasi...</div>
+        <div id="isp-display" style="opacity: 0.8;">Mencari ISP...</div>
     </div>
 
-    <div class="card">
+    <div class="card" style="overflow-x: auto;">
         <button onclick="clearLogs()" style="float: right;">Reset Histori</button>
-        <h3>Histori IP Pernah Terpakai</h3>
+        <h3>Histori Penggunaan IP</h3>
         <table>
             <thead>
                 <tr>
-                    <th>Waktu (Last Seen)</th>
+                    <th>Waktu</th>
                     <th>Alamat IPv4</th>
-                    <th>ISP / Provider</th>
+                    <th>ISP</th>
+                    <th>Negara / Kota</th>
                 </tr>
             </thead>
             <tbody id="log-table"></tbody>
@@ -48,47 +51,56 @@
 <script>
     async function initCheck() {
         try {
-            // Step 1: Ambil IP via Cloudflare (Anti-Gagal)
+            // 1. Ambil IP dulu (Sangat stabil)
             const cfRes = await fetch('https://1.1.1.1/cdn-cgi/trace');
             const cfText = await cfRes.text();
             const currentIP = cfText.split('\n').find(line => line.startsWith('ip=')).split('=')[1];
 
-            // Step 2: Ambil Detail ISP berdasarkan IP tersebut
-            let currentISP = "ISP Tidak Diketahui";
+            // 2. Ambil Detail ISP & Lokasi
+            let geoData = { isp: "Unknown", country: "-", city: "-" };
             try {
-                const ispRes = await fetch(`https://ipapi.co/${currentIP}/json/`);
-                const ispData = await ispRes.json();
-                currentISP = ispData.org || ispData.asn || "ISP Tidak Terdeteksi";
+                // Menggunakan IPWHOIS (HTTPS friendly & detail)
+                const res = await fetch(`https://ipwho.is/${currentIP}`);
+                const data = await res.json();
+                
+                if(data.success) {
+                    geoData = {
+                        isp: data.connection.isp,
+                        country: data.country,
+                        city: data.city,
+                        flag: data.flag.emoji
+                    };
+                }
             } catch (e) {
-                currentISP = "Gagal memuat nama ISP (Cek Adblock)";
+                console.error("Geo API Error");
             }
 
-            // Step 3: Logika Histori
-            let history = JSON.parse(localStorage.getItem('ip_history_v2')) || [];
+            // 3. Logika Histori
+            let history = JSON.parse(localStorage.getItem('ip_history_v4')) || [];
             const isUsed = history.some(item => item.ip === currentIP);
 
             // Update UI Utama
             document.getElementById('ip-display').innerText = currentIP;
-            document.getElementById('isp-display').innerText = "ISP: " + currentISP;
+            document.getElementById('loc-display').innerText = `${geoData.flag || ''} ${geoData.city}, ${geoData.country}`;
+            document.getElementById('isp-display').innerText = "ISP: " + geoData.isp;
 
             if (isUsed) {
                 document.getElementById('status-container').innerHTML = '<div class="status-used">⚠️ IP INI SUDAH PERNAH TERPAKAI!</div>';
             } else {
                 document.getElementById('status-container').innerHTML = '<div class="status-fresh">✅ IP FRESH / BELUM TERCATAT</div>';
-                // Tambahkan ke histori jika baru
                 history.unshift({
                     time: new Date().toLocaleString('id-ID'),
                     ip: currentIP,
-                    isp: currentISP
+                    isp: geoData.isp,
+                    loc: `${geoData.city}, ${geoData.country}`
                 });
-                localStorage.setItem('ip_history_v2', JSON.stringify(history));
+                localStorage.setItem('ip_history_v4', JSON.stringify(history));
             }
 
             renderTable(history);
 
         } catch (error) {
-            document.getElementById('status-container').innerHTML = "Kesalahan Koneksi. Coba lagi.";
-            console.error(error);
+            document.getElementById('status-container').innerHTML = "Kesalahan Koneksi.";
         }
     }
 
@@ -99,13 +111,14 @@
                 <td>${item.time}</td>
                 <td style="font-family: monospace; font-weight: bold; color: #fbbf24;">${item.ip}</td>
                 <td>${item.isp}</td>
+                <td><span class="badge-geo">${item.loc}</span></td>
             </tr>
         `).join('');
     }
 
     function clearLogs() {
-        if(confirm("Hapus semua catatan?")) {
-            localStorage.removeItem('ip_history_v2');
+        if(confirm("Hapus semua histori?")) {
+            localStorage.removeItem('ip_history_v4');
             location.reload();
         }
     }
