@@ -3,28 +3,30 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IPv4 Monitor</title>
+    <title>IPv4 Monitor + ISP</title>
     <style>
-        body { font-family: sans-serif; background: #0b0f1a; color: #d1d5db; padding: 20px; }
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #0f172a; color: #e2e8f0; padding: 20px; }
         .container { max-width: 800px; margin: auto; }
-        .card { background: #161b2a; padding: 20px; border-radius: 12px; border: 1px solid #2d3748; margin-bottom: 20px; }
-        .ip-text { font-size: 28px; color: #fbbf24; font-weight: bold; font-family: monospace; display: block; margin: 10px 0; }
-        .status-used { background: #7f1d1d; color: #fecaca; padding: 8px; border-radius: 6px; font-weight: bold; display: block; text-align: center; margin-bottom: 15px; border: 1px solid #dc2626; }
-        .status-fresh { background: #064e3b; color: #a7f3d0; padding: 8px; border-radius: 6px; font-weight: bold; display: block; text-align: center; margin-bottom: 15px; border: 1px solid #059669; }
-        table { width: 100%; border-collapse: collapse; }
-        th, td { padding: 12px; border-bottom: 1px solid #2d3748; text-align: left; }
-        th { background: #1e293b; color: #60a5fa; }
-        button { background: #374151; color: white; border: none; padding: 8px 12px; border-radius: 6px; cursor: pointer; }
+        .card { background: #1e293b; padding: 25px; border-radius: 12px; border: 1px solid #334155; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
+        .ip-text { font-size: 32px; color: #fbbf24; font-weight: bold; font-family: monospace; display: block; margin: 10px 0; }
+        .isp-text { font-size: 1.1em; color: #38bdf8; font-weight: 500; }
+        .status-used { background: #7f1d1d; color: #fecaca; padding: 10px; border-radius: 8px; font-weight: bold; display: block; text-align: center; margin-bottom: 15px; border: 1px solid #dc2626; }
+        .status-fresh { background: #064e3b; color: #a7f3d0; padding: 10px; border-radius: 8px; font-weight: bold; display: block; text-align: center; margin-bottom: 15px; border: 1px solid #059669; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { padding: 12px; border-bottom: 1px solid #334155; text-align: left; }
+        th { background: #0f172a; color: #94a3b8; font-size: 0.8em; text-transform: uppercase; }
+        button { background: #334155; color: white; border: none; padding: 8px 15px; border-radius: 6px; cursor: pointer; transition: 0.2s; }
+        button:hover { background: #475569; }
     </style>
 </head>
 <body>
 
 <div class="container">
     <div class="card">
-        <h2>Pengecekan IPv4</h2>
-        <div id="status-container">Sedang memproses...</div>
+        <h2>Koneksi Saat Ini</h2>
+        <div id="status-container">Menghubungkan ke server...</div>
         <span id="ip-display" class="ip-text">Mencari IP...</span>
-        <div id="isp-display" style="font-size: 0.9em; opacity: 0.8;"></div>
+        <div id="isp-display" class="isp-text">Mencari ISP...</div>
     </div>
 
     <div class="card">
@@ -33,8 +35,9 @@
         <table>
             <thead>
                 <tr>
-                    <th>Waktu</th>
-                    <th>Alamat IP</th>
+                    <th>Waktu (Last Seen)</th>
+                    <th>Alamat IPv4</th>
+                    <th>ISP / Provider</th>
                 </tr>
             </thead>
             <tbody id="log-table"></tbody>
@@ -43,69 +46,71 @@
 </div>
 
 <script>
-    async function getIP() {
+    async function initCheck() {
         try {
-            // Gunakan Cloudflare Trace (Sangat stabil dan jarang diblokir)
-            const response = await fetch('https://1.1.1.1/cdn-cgi/trace');
-            const text = await response.text();
-            
-            // Ekstrak baris IP dari data text Cloudflare
-            const lines = text.split('\n');
-            const data = {};
-            lines.forEach(line => {
-                const parts = line.split('=');
-                if (parts[1]) data[parts[0]] = parts[1];
-            });
+            // Step 1: Ambil IP via Cloudflare (Anti-Gagal)
+            const cfRes = await fetch('https://1.1.1.1/cdn-cgi/trace');
+            const cfText = await cfRes.text();
+            const currentIP = cfText.split('\n').find(line => line.startsWith('ip=')).split('=')[1];
 
-            const currentIP = data.ip;
-            const logTable = document.getElementById('log-table');
-            const statusContainer = document.getElementById('status-container');
-            const ipDisplay = document.getElementById('ip-display');
-
-            // Ambil histori
-            let history = JSON.parse(localStorage.getItem('user_ip_history')) || [];
-            
-            // Cek apakah IP sudah ada
-            const isUsed = history.includes(currentIP);
-
-            // Update Tampilan Utama
-            ipDisplay.innerText = currentIP;
-            if (isUsed) {
-                statusContainer.innerHTML = '<div class="status-used">⚠️ IP INI SUDAH PERNAH TERPAKAI SEBELUMNYA!</div>';
-            } else {
-                statusContainer.innerHTML = '<div class="status-fresh">✅ IP FRESH / BELUM TERCATAT</div>';
-                // Simpan ke histori jika IP baru
-                history.unshift(currentIP);
-                localStorage.setItem('user_ip_history', JSON.stringify(history));
+            // Step 2: Ambil Detail ISP berdasarkan IP tersebut
+            let currentISP = "ISP Tidak Diketahui";
+            try {
+                const ispRes = await fetch(`https://ipapi.co/${currentIP}/json/`);
+                const ispData = await ispRes.json();
+                currentISP = ispData.org || ispData.asn || "ISP Tidak Terdeteksi";
+            } catch (e) {
+                currentISP = "Gagal memuat nama ISP (Cek Adblock)";
             }
 
-            // Update Tabel Histori (Biar tahu IP apa saja yang sudah tersimpan)
+            // Step 3: Logika Histori
+            let history = JSON.parse(localStorage.getItem('ip_history_v2')) || [];
+            const isUsed = history.some(item => item.ip === currentIP);
+
+            // Update UI Utama
+            document.getElementById('ip-display').innerText = currentIP;
+            document.getElementById('isp-display').innerText = "ISP: " + currentISP;
+
+            if (isUsed) {
+                document.getElementById('status-container').innerHTML = '<div class="status-used">⚠️ IP INI SUDAH PERNAH TERPAKAI!</div>';
+            } else {
+                document.getElementById('status-container').innerHTML = '<div class="status-fresh">✅ IP FRESH / BELUM TERCATAT</div>';
+                // Tambahkan ke histori jika baru
+                history.unshift({
+                    time: new Date().toLocaleString('id-ID'),
+                    ip: currentIP,
+                    isp: currentISP
+                });
+                localStorage.setItem('ip_history_v2', JSON.stringify(history));
+            }
+
             renderTable(history);
 
         } catch (error) {
-            document.getElementById('status-container').innerHTML = "Gagal mengambil data. Coba matikan VPN/Adblock atau buka di browser Chrome biasa.";
+            document.getElementById('status-container').innerHTML = "Kesalahan Koneksi. Coba lagi.";
             console.error(error);
         }
     }
 
     function renderTable(history) {
         const tableBody = document.getElementById('log-table');
-        tableBody.innerHTML = history.map(ip => `
+        tableBody.innerHTML = history.map(item => `
             <tr>
-                <td>${new Date().toLocaleDateString('id-ID')}</td>
-                <td style="font-family: monospace; font-weight: bold;">${ip}</td>
+                <td>${item.time}</td>
+                <td style="font-family: monospace; font-weight: bold; color: #fbbf24;">${item.ip}</td>
+                <td>${item.isp}</td>
             </tr>
         `).join('');
     }
 
     function clearLogs() {
-        if(confirm("Hapus semua catatan histori IP?")) {
-            localStorage.removeItem('user_ip_history');
+        if(confirm("Hapus semua catatan?")) {
+            localStorage.removeItem('ip_history_v2');
             location.reload();
         }
     }
 
-    getIP();
+    initCheck();
 </script>
 
 </body>
