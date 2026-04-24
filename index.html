@@ -92,7 +92,14 @@
         if (!data.success) throw new Error('Gagal ambil data');
 
         const currentIP = data.ip;
-        const isp = data.connection?.isp || '-';
+
+        // 🔥 FIX ISP (fallback lengkap)
+        const isp = 
+          data.connection?.isp || 
+          data.connection?.org || 
+          data.org || 
+          data.isp || 
+          'Tidak diketahui';
 
         document.getElementById('ip').textContent = currentIP;
         document.getElementById('isp').textContent = isp;
@@ -128,7 +135,7 @@
 
       } catch (err) {
         document.getElementById('ip').textContent = 'Gagal mengambil IP.';
-        document.getElementById('isp').textContent = '-';
+        document.getElementById('isp').textContent = 'Tidak diketahui';
         console.error(err);
       }
     }
