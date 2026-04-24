@@ -2,7 +2,7 @@
 <html lang="id">
 <head>
   <meta charset="UTF-8" />
-  <title>IP Viewer dengan Lokasi & Historis + Export CSV</title>
+  <title>IP Viewer dengan Lokasi, ISP & Historis + Export CSV</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <style>
     body {
@@ -41,12 +41,19 @@
   </style>
 </head>
 <body>
+
   <h1>Alamat IP Anda:</h1>
   <p id="ip">Memuat...</p>
 
+  <h2>Informasi ISP:</h2>
+  <p id="isp">Memuat...</p>
+
+  <h2>Status Koneksi:</h2>
+  <p id="security">Memuat...</p>
+
   <h2>Historis IP (Tersimpan di Browser):</h2>
   <label>🔍 Filter:
-    <input type="text" id="filterInput" placeholder="Cari IP / kota / negara..." />
+    <input type="text" id="filterInput" placeholder="Cari IP / kota / negara / ISP..." />
   </label>
   <p>Total IP unik: <span id="total">0</span></p>
   <ul id="history"></ul>
@@ -60,45 +67,105 @@
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script>
     let map = L.map('map').setView([0, 0], 2);
+    let markers = [];
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© OpenStreetMap contributors'
     }).addTo(map);
 
     function renderMapMarkers(history) {
+      markers.forEach(m => map.removeLayer(m));
+      markers = [];
+
       history.forEach(entry => {
         if (entry.lat && entry.lon) {
-          L.marker([entry.lat, entry.lon])
+          const marker = L.marker([entry.lat, entry.lon])
             .addTo(map)
-            .bindPopup(`<b>${entry.ip}</b><br>${entry.location}`);
+            .bindPopup(`
+              <b>${entry.ip}</b><br>
+              ${entry.location}<br>
+              ${entry.isp.replace(/\n/g,'<br>')}<br>
+              <b>${entry.status}</b>
+            `);
+          markers.push(marker);
         }
       });
     }
 
     async function getIP() {
       try {
-        const ipResponse = await fetch('https://api.ipify.org?format=json');
-        const ipData = await ipResponse.json();
-        const currentIP = ipData.ip;
+        // 🔥 pakai 1 API (lengkap)
+        const res = await fetch('https://ipwho.is/?security=1');
+        const data = await res.json();
+
+        if (!data.success) throw new Error('Gagal ambil data');
+
+        const currentIP = data.ip;
+
+        // ISP detail
+        const ispData = data.connection || {};
+        const isp = `
+ISP: ${ispData.isp || '-'}
+ORG: ${ispData.org || '-'}
+ASN: ${ispData.asn || '-'}
+DOMAIN: ${ispData.domain || '-'}
+`.trim();
+
         document.getElementById('ip').textContent = currentIP;
+        document.getElementById('isp').innerHTML = isp.replace(/\n/g,'<br>');
+
+        // 🔍 status koneksi
+        const isProxy = data.security?.proxy;
+        const isVPN = data.security?.vpn;
+        const isTor = data.security?.tor;
+
+        let status = "🟢 Aman (Residential)";
+        if (isVPN) status = "🟡 VPN Terdeteksi";
+        if (isProxy) status = "🟠 Proxy Terdeteksi";
+        if (isTor) status = "🔴 TOR Network";
+
+        let connectionType = "ISP Biasa";
+        if (ispData.org?.toLowerCase().includes('amazon') || ispData.org?.toLowerCase().includes('google')) {
+          connectionType = "Hosting / Data Center";
+        }
+        if (ispData.isp?.toLowerCase().includes('telkomsel') || ispData.isp?.toLowerCase().includes('xl')) {
+          connectionType = "Mobile Network";
+        }
+
+        document.getElementById('security').innerHTML = `
+          <b>Status:</b> ${status}<br>
+          <b>Tipe:</b> ${connectionType}
+        `;
 
         let history = JSON.parse(localStorage.getItem('ipHistory')) || [];
         const exists = history.some(entry => entry.ip === currentIP);
 
         if (!exists) {
-          const locationResponse = await fetch(`https://ipapi.co/${currentIP}/json/`);
-          const loc = await locationResponse.json();
-          const location = `${loc.city || '-'}, ${loc.country_name || '-'}`;
-          const lat = loc.latitude || null;
-          const lon = loc.longitude || null;
+          const location = `${data.city || '-'}, ${data.country || '-'}`;
+          const lat = data.latitude || null;
+          const lon = data.longitude || null;
           const timestamp = new Date().toLocaleString();
 
-          history.push({ ip: currentIP, time: timestamp, location, lat, lon });
+          history.push({
+            ip: currentIP,
+            time: timestamp,
+            location,
+            lat,
+            lon,
+            isp,
+            status
+          });
+
           localStorage.setItem('ipHistory', JSON.stringify(history));
         }
 
         renderHistory(history, currentIP);
         renderMapMarkers(history);
+
+        if (data.latitude && data.longitude) {
+          map.setView([data.latitude, data.longitude], 8);
+        }
+
       } catch (err) {
         document.getElementById('ip').textContent = 'Gagal mengambil IP.';
         console.error(err);
@@ -113,11 +180,16 @@
 
       history.forEach(entry => {
         const li = document.createElement('li');
-        li.textContent = `${entry.ip} - ${entry.time} - ${entry.location || 'Lokasi tidak tersedia'}`;
+
+        li.innerHTML = `
+          ${entry.ip} - ${entry.time}<br>
+          ${entry.location}<br>
+          ${entry.isp.replace(/\n,'<br>')}<br>
+          <b>${entry.status}</b>
+        `;
 
         if (entry.ip === currentIP) {
           li.classList.add('current');
-          li.textContent += ' ✅ (IP Saat Ini)';
         }
 
         list.appendChild(li);
@@ -127,10 +199,7 @@
     function hapusHistoris() {
       if (confirm('Yakin ingin menghapus seluruh historis IP?')) {
         localStorage.removeItem('ipHistory');
-        document.getElementById('history').innerHTML = '';
-        document.getElementById('total').textContent = '0';
-        alert('Historis telah dihapus.');
-        location.reload(); // reload agar marker juga dihapus
+        location.reload();
       }
     }
 
@@ -140,28 +209,36 @@
         alert('Tidak ada data historis untuk diekspor.');
         return;
       }
-      const header = ['IP', 'Waktu', 'Lokasi'];
-      const rows = history.map(h => [h.ip, h.time, h.location || '']);
+
+      const header = ['IP', 'Waktu', 'Lokasi', 'ISP', 'Status'];
+
+      const rows = history.map(h => [
+        h.ip,
+        h.time,
+        h.location || '',
+        h.isp || '',
+        h.status || ''
+      ]);
+
       const csvContent = [header, ...rows]
         .map(e => e.map(v => `"${v.replace(/"/g, '""')}"`).join(','))
         .join('\n');
 
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
+
       const a = document.createElement('a');
       a.href = url;
-      a.download = `historis-ip-${new Date().toISOString().slice(0,10)}.csv`;
-      a.style.display = 'none';
-      document.body.appendChild(a);
+      a.download = 'ip_history.csv';
       a.click();
-      document.body.removeChild(a);
+
       URL.revokeObjectURL(url);
     }
 
-    // Filter IP
     document.getElementById('filterInput').addEventListener('input', function() {
       const keyword = this.value.toLowerCase();
       const listItems = document.querySelectorAll('#history li');
+
       listItems.forEach(li => {
         li.style.display = li.textContent.toLowerCase().includes(keyword) ? '' : 'none';
       });
